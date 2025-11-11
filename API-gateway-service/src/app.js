@@ -1,18 +1,14 @@
 import Fastify from 'fastify';
-import dotenv from 'dotenv';
 import { config } from './config/env.js';
-import routes from './routes/index.js'; // Clean routes import
-import { connect_rabbitmq, close_rabbitmq } from './utils/rabbitmq.js';
-import { connect_redis, close_redis } from './utils/redis.js';
-import { rateLimitPlugin } from './middleware/rate-limit.middleware.js';
-
-// Load environment variables
-dotenv.config();
+import routes from './routes/index.js';
+import { connectRabbitMQ, closeRabbitMQ } from './utils/rabbitmq-client.js';
+import { connectRedis, closeRedis } from './utils/redis-client.js';
+import { rateLimitMiddleware } from './middleware/rate-limit-middleware.js';
 
 // Create Fastify instance
 const fastify = Fastify({
   logger: {
-    level: config.server.log_level || 'info',
+    level: config.server.log_level,
     transport: config.server.env === 'development' ? {
       target: 'pino-pretty',
       options: { colorize: true }
@@ -20,25 +16,29 @@ const fastify = Fastify({
   }
 });
 
-// Setup server with clean architecture
+// Global rate limiting
+fastify.addHook('onRequest', rateLimitMiddleware);
+
+// Setup server
 async function setupServer() {
   try {
     // Connect to external services
-    await connect_rabbitmq();
-    await connect_redis();
-    fastify.log.info('✅ External services connected');
+    await connectRabbitMQ();
+    await connectRedis();
+    
+    fastify.log.info('✅ External services connected successfully');
+
+    // Register all routes
+    await fastify.register(routes);
+
+    fastify.log.info('All routes registered successfully');
+
+    return fastify;
+
   } catch (error) {
-    fastify.log.error('❌ Failed to connect to external services:', error);
-    process.exit(1);
+    fastify.log.error('Server setup failed:', error);
+    throw error;
   }
-
-  // Register plugins
-  await fastify.register(rateLimitPlugin);
-
-  // Register all routes (clean import)
-  await fastify.register(routes);
-
-  return fastify;
 }
 
 // Start server
@@ -51,10 +51,12 @@ const start = async () => {
       host: config.server.host
     });
 
-    server.log.info(`🚀 API Gateway running on ${config.server.host}:${config.server.port}`);
-    
+    server.log.info(`API Gateway Service running on ${config.server.host}:${config.server.port}`);
+    server.log.info(`Health check: http://${config.server.host}:${config.server.port}/health`);
+    server.log.info(`Environment: ${config.server.env}`);
+
   } catch (err) {
-    console.error('Error starting server:', err);
+    console.error('Failed to start server:', err);
     process.exit(1);
   }
 };
@@ -62,14 +64,32 @@ const start = async () => {
 // Graceful shutdown
 const gracefulShutdown = async (signal) => {
   console.log(`\n${signal} received. Starting graceful shutdown...`);
-  await close_rabbitmq();
-  await close_redis();
-  await fastify.close();
-  process.exit(0);
+  
+  try {
+    await closeRabbitMQ();
+    await closeRedis();
+    await fastify.close();
+    console.log('Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
 };
 
+// Signal handlers
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  gracefulShutdown('uncaughtException');
+});
 
 // Start the application
 start();
