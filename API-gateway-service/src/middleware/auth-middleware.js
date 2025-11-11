@@ -3,6 +3,11 @@ import { config } from '../config/env.js';
 import { formatErrorResponse } from '../utils/response-formatter.js';
 
 export const authenticate = async (request, reply) => {
+  // Skip authentication for health endpoint
+  if (request.url === '/health') {
+    return;
+  }
+
   try {
     const authHeader = request.headers.authorization;
     
@@ -26,27 +31,16 @@ export const authenticate = async (request, reply) => {
       );
     }
 
+    // Verify JWT token
     const decoded = jwt.verify(token, config.security.jwt_secret);
     request.user = decoded;
     
   } catch (error) {
+    console.error('JWT Verification Error:', error.message);
     return reply.code(401).send(
       formatErrorResponse(
         { code: 'invalid_token' },
         'Authentication token is invalid or expired'
-      )
-    );
-  }
-};
-
-export const requireApiKey = async (request, reply) => {
-  const apiKey = request.headers['x-api-key'];
-  
-  if (!apiKey || apiKey !== config.security.api_key) {
-    return reply.code(401).send(
-      formatErrorResponse(
-        { code: 'invalid_api_key' },
-        'Valid API key is required'
       )
     );
   }
