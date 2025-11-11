@@ -1,16 +1,15 @@
 import Fastify from 'fastify';
 import dotenv from 'dotenv';
 import { config } from './config/env.js';
-import notificationRoutes from './routes/notification.routes.js';
+import routes from './routes/index.js'; // Clean routes import
 import { connect_rabbitmq, close_rabbitmq } from './utils/rabbitmq.js';
 import { connect_redis, close_redis } from './utils/redis.js';
-import { get_all_circuit_breaker_stats } from './utils/circuit-breaker.js';
 import { rateLimitPlugin } from './middleware/rate-limit.middleware.js';
 
 // Load environment variables
 dotenv.config();
 
-// Create Fastify instance with proper logging
+// Create Fastify instance
 const fastify = Fastify({
   logger: {
     level: config.server.log_level || 'info',
@@ -21,10 +20,10 @@ const fastify = Fastify({
   }
 });
 
-// Register plugins and routes
+// Setup server with clean architecture
 async function setupServer() {
-  // Connect to external services
   try {
+    // Connect to external services
     await connect_rabbitmq();
     await connect_redis();
     fastify.log.info('✅ External services connected');
@@ -33,39 +32,11 @@ async function setupServer() {
     process.exit(1);
   }
 
-  // Register rate limiting plugin
+  // Register plugins
   await fastify.register(rateLimitPlugin);
 
-  // Register notification routes
-  await fastify.register(notificationRoutes, { prefix: '/api/v1' });
-
-  // Health check endpoint
-  fastify.get('/health', {
-    schema: {
-      description: 'Health check endpoint',
-      tags: ['Health'],
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            message: { type: 'string' },
-            circuit_breakers: { type: 'object' },
-            timestamp: { type: 'string' },
-            uptime: { type: 'number' }
-          }
-        }
-      }
-    }
-  }, async (request, reply) => {
-    const circuit_breakers = get_all_circuit_breaker_stats();
-    
-    return {
-      message: 'API Gateway service is healthy',
-      circuit_breakers,
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    };
-  });
+  // Register all routes (clean import)
+  await fastify.register(routes);
 
   return fastify;
 }
