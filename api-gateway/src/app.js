@@ -1,55 +1,86 @@
 import Fastify from 'fastify';
 import dotenv from 'dotenv';
+import { config } from './config/env.js';
+import notificationRoutes from './routes/notification.routes.js';
+import { connect_rabbitmq, close_rabbitmq } from './utils/rabbitmq.js';
+import { connect_redis, close_redis } from './utils/redis.js';
+import { get_all_circuit_breaker_stats } from './utils/circuit-breaker.js';
+import { rateLimitPlugin } from './middleware/rate-limit.middleware.js';
 
 // Load environment variables
 dotenv.config();
 
-// Import routes
-import routes from './routes/index.js';
-
-// Import services
-import { queueService } from './services/queue.service.js';
-
-// Create Fastify instance
+// Create Fastify instance with proper logging
 const fastify = Fastify({
   logger: {
-    level: process.env.LOG_LEVEL || 'info',
-    transport: {
+    level: config.server.log_level || 'info',
+    transport: config.server.env === 'development' ? {
       target: 'pino-pretty',
-      options: {
-        colorize: true
-      }
-    }
+      options: { colorize: true }
+    } : undefined
   }
 });
 
-// Register routes
-fastify.register(routes);
+// Register plugins and routes
+async function setupServer() {
+  // Connect to external services
+  try {
+    await connect_rabbitmq();
+    await connect_redis();
+    fastify.log.info('✅ External services connected');
+  } catch (error) {
+    fastify.log.error('❌ Failed to connect to external services:', error);
+    process.exit(1);
+  }
 
-// Health check route
-fastify.get('/health', async (request, reply) => {
-  return {
-    status: 'healthy',
-    service: 'api-gateway',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  };
-});
+  // Register rate limiting plugin
+  await fastify.register(rateLimitPlugin);
+
+  // Register notification routes
+  await fastify.register(notificationRoutes, { prefix: '/api/v1' });
+
+  // Health check endpoint
+  fastify.get('/health', {
+    schema: {
+      description: 'Health check endpoint',
+      tags: ['Health'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+            circuit_breakers: { type: 'object' },
+            timestamp: { type: 'string' },
+            uptime: { type: 'number' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const circuit_breakers = get_all_circuit_breaker_stats();
+    
+    return {
+      message: 'API Gateway service is healthy',
+      circuit_breakers,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    };
+  });
+
+  return fastify;
+}
 
 // Start server
 const start = async () => {
   try {
-    // Connect to RabbitMQ
-    await queueService.connect(process.env.RABBITMQ_URL);
+    const server = await setupServer();
     
-    // Start server
-    const address = await fastify.listen({
-      port: process.env.PORT || 3000,
-      host: '0.0.0.0'
+    await server.listen({
+      port: config.server.port,
+      host: config.server.host
     });
-    
-    console.log(`🚀 API Gateway running at ${address}`);
-    console.log(`📍 Health check: ${address}/health`);
+
+    server.log.info(`🚀 API Gateway running on ${config.server.host}:${config.server.port}`);
     
   } catch (err) {
     console.error('Error starting server:', err);
@@ -57,20 +88,17 @@ const start = async () => {
   }
 };
 
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  await queueService.close();
+// Graceful shutdown
+const gracefulShutdown = async (signal) => {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  await close_rabbitmq();
+  await close_redis();
   await fastify.close();
   process.exit(0);
-});
+};
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down gracefully');
-  await queueService.close();
-  await fastify.close();
-  process.exit(0);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start the application
 start();
