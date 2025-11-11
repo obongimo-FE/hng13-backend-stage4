@@ -1,27 +1,30 @@
 {
-  "name": "api_gateway_service",
-  "version": "1.0.0", 
+  "name": "api-gateway-service",
+  "version": "1.0.0",
   "type": "module",
   "description": "API Gateway for Distributed Notification System",
   "main": "src/app.js",
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "echo \"No tests yet\" && exit 0"
+    "test": "echo \"No tests yet\" && exit 0",
+    "generate-token": "node src/scripts/generate-test-token.js",
+    "docker:dev": "docker-compose up --build"
   },
+  "keywords": ["api-gateway", "microservices", "notifications"],
+  "author": "Your Team",
+  "license": "MIT",
   "dependencies": {
     "fastify": "^4.24.3",
-    "fastify-swagger": "^8.0.0",
     "amqplib": "^0.10.3",
-    "axios": "^1.6.0",
+    "redis": "^4.6.7",
+    "axios": "^1.6.2",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^9.0.1",
     "dotenv": "^16.3.1",
-    "opossum": "^8.1.0",
-    "redis": "^4.6.0",
-    "uuid": "^9.0.0",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.0"
+    "opossum": "^8.1.4"
   },
   "devDependencies": {
-    "nodemon": "^3.0.0"
+    "nodemon": "^3.0.1"
   }
 }

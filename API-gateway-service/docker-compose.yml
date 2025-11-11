@@ -6,17 +6,17 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - RABBITMQ_URL=amqp://rabbitmq:5672
-      - JWT_SECRET=your-super-secure-jwt-secret-2025
+      - REDIS_URL=redis://redis:6379
+      - USER_SERVICE_URL=http://user-service:3001
+      - TEMPLATE_SERVICE_URL=http://template-service:3002
     depends_on:
       - rabbitmq
+      - redis
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    networks:
+      - notification-network
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -26,8 +26,16 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=admin
       - RABBITMQ_DEFAULT_PASS=password
-    healthcheck:
-      test: rabbitmq-diagnostics -q ping
-      interval: 30s
-      timeout: 30s
-      retries: 3
+    networks:
+      - notification-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - notification-network
+
+networks:
+  notification-network:
+    driver: bridge
