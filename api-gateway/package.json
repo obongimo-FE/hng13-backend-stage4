@@ -1,0 +1,18 @@
+{
+  "dependencies": {
+    "@fastify/env": "^5.0.3",
+    "@fastify/redis": "^5.0.0",
+    "amqplib": "^0.10.3",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^4.24.3",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.1",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.10",
+    "prettier": "^3.6.2",
+    "supertest": "^7.1.4"
+  }
+}
