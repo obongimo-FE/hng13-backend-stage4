@@ -1,8 +1,13 @@
-import healthRoutes from './health.routes.js';
-import notificationRoutes from './notification.routes.js';
+import healthRoutes from './health.js';
+import notificationRoutes from './notifications.js';
 
+/**
+ * Main Routes Registry - Only imports and registers routes
+ */
 export default async function routes(fastify, options) {
-  // Register routes (similar to Express app.use())
+  // Register health routes
   await fastify.register(healthRoutes);
-  await fastify.register(notificationRoutes, { prefix: '/api' });
+  
+  // Register notification routes with prefix
+  await fastify.register(notificationRoutes, { prefix: '/api/v1' });
 }
