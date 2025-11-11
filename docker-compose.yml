@@ -1,0 +1,81 @@
+services:
+  # --- Your Custom Services ---
+  user-service:
+    build: ./user-service          # Path to the user-service Dockerfile
+    container_name: user_service
+    ports:
+      - "3002:3002"                # Map port 3002 to your machine
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgres://hng_user:hng_pass@postgres_db:5432/hng_db?sslmode=disable
+      - REDIS_URL=redis://redis_cache:6379
+      - PORT=3002
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      redis_cache:
+        condition: service_started
+    networks:
+      - hng_network
+
+  template-service:
+    build: ./template-service      # Path to the template-service Dockerfile
+    container_name: template_service
+    ports:
+      - "3001:3001"                # Map port 3001 to your machine
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgres://hng_user:hng_pass@postgres_db:5432/hng_db
+      - PORT=3001
+    depends_on:
+      - postgres_db
+    networks:
+      - hng_network
+
+  # --- Infrastructure Services ---
+  postgres_db:
+    image: postgres:14-alpine
+    container_name: postgres_db
+    environment:
+      - POSTGRES_USER=hng_user
+      - POSTGRES_PASSWORD=hng_pass
+      - POSTGRES_DB=hng_db
+    ports:
+      - "5433:5432"                # Map Postgres port for easy external debugging
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist database data
+    networks:
+      - hng_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hng_user -d hng_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis_cache:
+    image: redis:7-alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"                # Map Redis port for debugging
+    volumes:
+      - redis_data:/data           # Persist cache data
+    networks:
+      - hng_network
+  
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"                # AMQP port
+      - "15672:15672"              # Management UI
+    networks:
+      - hng_network
+
+# --- Shared Volumes & Networks ---
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  hng_network:
+    driver: bridge

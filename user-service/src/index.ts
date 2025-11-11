@@ -8,6 +8,7 @@ import { createClient } from 'redis';
 dotenv.config();
 
 const server: FastifyInstance = Fastify({ logger: true });
+const isProduction = process.env.NODE_ENV === 'production';
 
 interface CreateUserRequest {
   Body: {
@@ -48,7 +49,7 @@ interface UpdatePreferencesRequest {
 // Create a new database client
 const dbClient = new Client({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Often needed for cloud DBs
+  ssl: isProduction ? { rejectUnauthorized: false } : false, // Often needed for cloud DBs
 });
 
 // Create Redis client
@@ -69,8 +70,8 @@ const createTable = async () => {
     try {
       await dbClient.query(query);
       server.log.info('Users table checked/created successfully');
-    } catch (err) {
-      server.log.error('Error creating users table:', err);
+    } catch (err: any) {
+      server.log.error('Error creating users table:', err.message || err);
     }
   };
 
@@ -249,7 +250,7 @@ async function userRoutes(server: FastifyInstance) {
           data: result.rows[0] // Send back the updated user data
         };
 
-      } catch (err: any) {:
+      } catch (err: any) {
         request.log.error(err);
         reply.code(500);
         return { success: false, message: 'Internal Server Error' };
@@ -294,8 +295,9 @@ const start = async () => {
     return { status: 'ok', service: 'user-service' };
     });
 
-    await server.listen({ port: Number(process.env.PORT) || 3002 });
+    await server.listen({ host: '0.0.0.0', port: Number(process.env.PORT) || 3002 });
     console.log(`User Service running on port ${Number(process.env.PORT) || 3002}`);
+
   } catch (err) {
     server.log.error(err);
     process.exit(1);

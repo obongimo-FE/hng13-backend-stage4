@@ -6,7 +6,7 @@ import { Client } from 'pg';
 
 dotenv.config();
 console.log('DATABASE_URL:', process.env.DATABASE_URL);
-
+const isProduction = process.env.NODE_ENV === 'production';
 
 const server: FastifyInstance = Fastify({ logger: true });
 
@@ -26,7 +26,7 @@ interface GetTemplateParams {
 // Create a new database client
 const dbClient = new Client({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Often needed for cloud DBs
+  ssl: isProduction ? { rejectUnauthorized: false } : false, // Often needed for cloud DBs
 });
 
 const createTable = async () => {
@@ -41,8 +41,8 @@ const createTable = async () => {
   try {
     await dbClient.query(query);
     server.log.info('Templates table checked/created successfully');
-  } catch (err) {
-    server.log.error('Error creating table:', err);
+  } catch (err: any) {
+    server.log.error('Error creating table:', err.message || err);  
   }
 };
 
@@ -111,7 +111,9 @@ const start = async () => {
     return { status: 'ok', service: 'template-service' };
     });
 
-    await server.listen({ port: process.env.PORT || 3001 });
+    await server.listen({ host: '0.0.0.0', port: Number(process.env.PORT) || 3001 });
+    console.log(`User Service running on port ${Number(process.env.PORT) || 3001}`);
+
   } catch (err) {
     server.log.error(err);
     process.exit(1);
