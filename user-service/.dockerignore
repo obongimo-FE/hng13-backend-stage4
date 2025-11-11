@@ -1,0 +1,12 @@
+# Ignore the local modules, we'll install them inside the container
+node_modules
+
+# Ignore the compiled output (if you have it locally)
+dist
+
+# Ignore the environment file (we should provide this at runtime)
+.env
+
+# Ignore Docker files
+Dockerfile
+.dockerignore
