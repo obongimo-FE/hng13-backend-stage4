@@ -1,18 +1,39 @@
 {
+  "name": "api-gateway",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "API Gateway for Distributed Notification System - HNG13 Stage 4",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write src/ tests/",
+    "docker:build": "docker build -t api-gateway .",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "keywords": ["microservices", "api-gateway", "rabbitmq", "notifications", "hng13"],
+  "author": "Your Team Name",
+  "license": "MIT",
   "dependencies": {
-    "@fastify/env": "^5.0.3",
-    "@fastify/redis": "^5.0.0",
-    "amqplib": "^0.10.3",
-    "bcryptjs": "^3.0.3",
     "fastify": "^4.24.3",
+    "amqplib": "^0.10.3",
+    "uuid": "^9.0.1",
     "jsonwebtoken": "^9.0.2",
-    "uuid": "^13.0.0"
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
-    "eslint": "^9.39.1",
-    "jest": "^30.2.0",
-    "nodemon": "^3.1.10",
-    "prettier": "^3.6.2",
-    "supertest": "^7.1.4"
+    "nodemon": "^3.0.1",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "eslint": "^8.52.0",
+    "prettier": "^3.0.3"
   }
 }
