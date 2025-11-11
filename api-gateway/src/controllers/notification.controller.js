@@ -1,48 +1,34 @@
-import { ResponseFormatter } from '../utils/responseFormatter.js';
-import { NotificationService } from '../services/notification.service.js';
+import { process_notification_request } from '../services/notification.service.js';
+import { formatSuccessResponse, formatErrorResponse } from '../utils/response-formatter.js';
 
+/**
+ * Notification Controller - Handles notification logic
+ */
 export class NotificationController {
-  static async createNotification(request, reply) {
-    try {
-      const { user_id, template_id, type, variables = {}, priority = 'normal' } = request.body;
+  static async sendNotification(request, reply) {
+    const { user_id, template_name, variables } = request.body;
 
-      const result = await NotificationService.queueNotification({
-        user_id,
-        template_id,
-        type,
-        variables,
-        priority
-      });
-
-      return ResponseFormatter.success(result, 'Notification queued successfully');
-
-    } catch (error) {
-      console.error('Notification creation failed:', error);
-      
-      return reply.code(500).send(
-        ResponseFormatter.error(
-          'notification_creation_failed',
-          'Failed to create notification'
+    // Validation
+    if (!user_id || !template_name || !variables) {
+      return reply.code(400).send(
+        formatErrorResponse(
+          { code: 'validation_error' },
+          'user_id, template_name, and variables are required'
         )
       );
     }
-  }
 
-  static async getNotificationStatus(request, reply) {
-    try {
-      const { notification_id } = request.params;
-      
-      const status = await NotificationService.getNotificationStatus(notification_id);
-      
-      return ResponseFormatter.success(status, 'Notification status retrieved');
+    // Return 202 Accepted immediately (fire and forget)
+    const response = formatSuccessResponse(
+      null,
+      'Notification request accepted and is being processed.'
+    );
 
-    } catch (error) {
-      return reply.code(404).send(
-        ResponseFormatter.error(
-          'notification_not_found',
-          'Notification not found'
-        )
-      );
-    }
+    reply.code(202).send(response);
+
+    // Process asynchronously (don't await)
+    process_notification_request(request.body).catch((error) => {
+      request.log.error('Error processing notification request (async):', error);
+    });
   }
 }
