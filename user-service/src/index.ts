@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import { Client } from 'pg';
 import bcrypt from 'bcryptjs';
 import { createClient } from 'redis';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUI from '@fastify/swagger-ui';
 
 dotenv.config();
 
@@ -77,7 +79,35 @@ const createTable = async () => {
 
 async function userRoutes(server: FastifyInstance) {
 
-  server.post<CreateUserRequest>('/users', async (request, reply) => {
+  server.post<CreateUserRequest>('/users',{
+    // Adding Schema Object for Swagger Documentation
+    schema: {
+      summary: 'Register a new user',
+      tags: ['Users'],
+      body: {
+        type: 'object',
+        required: ['email', 'password', 'name'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 8 },
+          name: { type: 'string' },
+          push_token: { type: 'string' }
+        }
+      },
+      response: {
+        201: {
+          description: 'Successful registration',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            data: { $ref: 'User' }
+          }
+        }
+      }
+    },
+    // schema ends
+  }, async (request, reply) => {
     const { email, password, name, push_token } = request.body;
 
     try {
@@ -111,7 +141,39 @@ async function userRoutes(server: FastifyInstance) {
     }
   });
 
-  server.get<GetUserParams>('/users/:id', async (request, reply) => {
+  server.get<GetUserParams>('/users/:id', {
+    // Adding Schema Object for Swagger Documentation
+    schema: {
+      summary: 'Get a user by ID',
+      tags: ['Users'],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'number' }
+        }
+      },
+      response: {
+        200: {
+          description: 'Successful response',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: { $ref: 'User' }
+          }
+        },
+        404: {
+          description: 'User not found',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    },
+    // Schema ends
+  }, async (request, reply) => {
     const { id } = request.params;
     const cacheKey = `user:${id}`;
 
@@ -257,6 +319,52 @@ async function userRoutes(server: FastifyInstance) {
       }
     }
   );
+
+  server.delete<GetUserParams>('/users/:id', {
+    schema: {
+      summary: 'Delete a user by ID',
+      tags: ['Users'],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'number' } }
+      },
+      response: {
+        204: {
+          type: 'object',
+          properties: {}
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const cacheKey = `user:${id}`;
+
+    if (isNaN(Number(id))) {
+        reply.code(400);
+        return { success: false, message: 'Invalid user ID' };
+    }
+
+    try {
+      const query = 'DELETE FROM users WHERE id = $1 RETURNING *;';
+      const result = await dbClient.query(query, [id]);
+
+      if (result.rows.length === 0) {
+        reply.code(404);
+        return { success: false, message: 'User not found' };
+      }
+
+      // --- CACHE INVALIDATION ---
+      await redisClient.del(cacheKey);
+      request.log.info(`CACHE INVALIDATED (DELETE): ${cacheKey}`);
+
+      reply.code(204);
+      return;
+    } catch (err: any) {
+      request.log.error(err);
+      reply.code(500);
+      return { success: false, message: 'Internal Server Error' };
+    }
+  });
 }
 
 const start = async () => {
@@ -287,6 +395,53 @@ const start = async () => {
 
     // Setup database table
     await createTable();
+
+    // Register the main Swagger plugin
+    await server.register(fastifySwagger, { 
+      openapi: {
+        info: {
+          title: 'HNG User Service',
+          description: 'API documentation for the User and Template services',
+          version: '1.0.0'
+        },
+        servers: [
+          { url: 'http://localhost:3002', description: 'Development server' }
+        ],
+      },
+    });
+    
+    // Register the Swagger UI (the webpage)
+    await server.register(fastifySwaggerUI, { 
+      routePrefix: '/docs', // This creates the http://localhost:3002/docs page
+      uiConfig: {
+        docExpansion: 'full', // 'list' or 'full'
+        deepLinking: false
+      },
+      staticCSP: true, // Content Security Policy
+      transformStaticCSP: (header) => header,
+    });
+    
+    // Define User schema for Swagger
+    const userSchema = {
+      $id: 'User',
+      type: 'object',
+      properties: {
+        user_id: { type: 'number' },
+        email: { type: 'string', format: 'email' },
+        name: { type: 'string' },
+        push_token: { type: ['string', 'null'] },
+        created_at: { type: 'string', format: 'date-time' },
+        preferences: {
+          type: 'object',
+          properties: {
+            email: { type: 'boolean' },
+            push: { type: 'boolean' }
+          }
+        }
+      }
+    };
+
+    server.addSchema(userSchema);
 
     // Register all your routes with the prefix
     server.register(userRoutes, { prefix: '/api/v1' });
