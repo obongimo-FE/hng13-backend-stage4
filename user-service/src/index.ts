@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { Client } from 'pg';
 import bcrypt from 'bcryptjs';
 import { createClient } from 'redis';
+import { formatSuccessResponse, formatErrorResponse } from './utils/response-formatter.js';
 
 dotenv.config();
 
@@ -95,19 +96,18 @@ async function userRoutes(server: FastifyInstance) {
       const result = await dbClient.query(query, [email, passwordHash, name, push_token]);
 
       reply.code(201);
-      return {
-        success: true,
-        message: 'User created successfully',
-        data: result.rows[0]
-      };
+      return formatSuccessResponse(
+        result.rows[0],
+        'User created successfully'
+      );
     } catch (err: any) {
       request.log.error(err);
       if (err.code === '23505') { // Unique violation (email already exists)
           reply.code(409);
-          return { success: false, message: 'Email already registered' };
+          return formatErrorResponse('Email already registered', 'duplicate_email');
       }
       reply.code(500);
-      return { success: false, message: 'Internal Server Error' };
+      return formatErrorResponse('Internal Server Error', 'internal_error');
     }
   });
 
@@ -118,7 +118,7 @@ async function userRoutes(server: FastifyInstance) {
     // Ensure ID is an integer (basic validation to prevent ugly DB errors)
     if (isNaN(Number(id))) {
         reply.code(400);
-        return { success: false, message: 'Invalid user ID' };
+        return formatErrorResponse('Invalid user ID', 'validation_error');
     }
 
     try {
@@ -126,10 +126,7 @@ async function userRoutes(server: FastifyInstance) {
       const cachedUser = await redisClient.get(cacheKey);
       if (cachedUser) {
         request.log.info(`CACHE HIT: ${cacheKey}`);
-        return {
-          success: true,
-          data: JSON.parse(cachedUser)
-        };
+        return formatSuccessResponse(JSON.parse(cachedUser), 'User retrieved successfully');
       }
 
       request.log.info(`CACHE MISS: ${cacheKey}`);
@@ -146,7 +143,7 @@ async function userRoutes(server: FastifyInstance) {
 
       if (result.rows.length === 0) {
         reply.code(404);
-        return { success: false, message: 'User not found' };
+        return formatErrorResponse('User not found', 'not_found');
       }
 
       // --- FIX: Added this missing line ---
@@ -155,14 +152,11 @@ async function userRoutes(server: FastifyInstance) {
       // 3. SAVE TO CACHE (1 hour expiration)
       await redisClient.set(cacheKey, JSON.stringify(user), { EX: 3600 });
 
-      return {
-        success: true,
-        data: user // Return the user object we just fetched
-      };
+      return formatSuccessResponse(user, 'User retrieved successfully');
     } catch (err) {
       request.log.error(err);
       reply.code(500);
-      return { success: false, message: 'Internal Server Error' };
+      return formatErrorResponse('Internal Server Error', 'internal_error');
     }
   });
 
@@ -176,7 +170,7 @@ async function userRoutes(server: FastifyInstance) {
 
       if (result.rows.length === 0) {
         reply.code(401); // Unauthorized
-        return { success: false, message: 'Invalid email or password' };
+        return formatErrorResponse('Invalid email or password', 'authentication_error');
       }
 
       const user = result.rows[0];
@@ -186,7 +180,7 @@ async function userRoutes(server: FastifyInstance) {
 
       if (!isPasswordValid) {
         reply.code(401); // Unauthorized
-        return { success: false, message: 'Invalid email or password' };
+        return formatErrorResponse('Invalid email or password', 'authentication_error');
       }
 
       // DO NOT return the password hash!
@@ -194,15 +188,11 @@ async function userRoutes(server: FastifyInstance) {
 
       // In a real app, you'd create a JWT token here.
       // For now, just logging in is enough.
-      return {
-        success: true,
-        message: 'Login successful',
-        data: safeUserData
-      };
+      return formatSuccessResponse(safeUserData, 'Login successful');
     } catch (err) {
       request.log.error(err);
       reply.code(500);
-      return { success: false, message: 'Internal Server Error' };
+      return formatErrorResponse('Internal Server Error', 'internal_error');
     }
   });
 
@@ -215,7 +205,7 @@ async function userRoutes(server: FastifyInstance) {
 
       if (isNaN(Number(id))) {
         reply.code(400);
-        return { success: false, message: 'Invalid user ID' };
+        return formatErrorResponse('Invalid user ID', 'validation_error');
       }
 
       try {
@@ -237,23 +227,22 @@ async function userRoutes(server: FastifyInstance) {
 
         if (result.rows.length === 0) {
           reply.code(404);
-          return { success: false, message: 'User not found' };
+          return formatErrorResponse('User not found', 'not_found');
         }
 
         // --- CACHE INVALIDATION ---
         await redisClient.del(cacheKey);
         request.log.info(`CACHE INVALIDATED: ${cacheKey}`);
 
-        return {
-          success: true,
-          message: 'Preferences updated successfully',
-          data: result.rows[0] // Send back the updated user data
-        };
+        return formatSuccessResponse(
+          result.rows[0],
+          'Preferences updated successfully'
+        );
 
       } catch (err: any) {
         request.log.error(err);
         reply.code(500);
-        return { success: false, message: 'Internal Server Error' };
+        return formatErrorResponse('Internal Server Error', 'internal_error');
       }
     }
   );
@@ -292,7 +281,10 @@ const start = async () => {
     server.register(userRoutes, { prefix: '/api/v1' });
 
     server.get('/health', async () => {
-    return { status: 'ok', service: 'user-service' };
+      return formatSuccessResponse(
+        { status: 'ok', service: 'user-service' },
+        'Service is healthy'
+      );
     });
 
     await server.listen({ host: '0.0.0.0', port: Number(process.env.PORT) || 3002 });

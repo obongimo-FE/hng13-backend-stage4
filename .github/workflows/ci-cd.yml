@@ -1,0 +1,181 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_USER: hng_user
+          POSTGRES_PASSWORD: hng_pass
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: admin
+          RABBITMQ_DEFAULT_PASS: password
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5672:5672
+          - 15672:15672
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: |
+            API-gateway-service/package-lock.json
+            user-service/package-lock.json
+            template-service/package-lock.json
+
+      - name: Install API Gateway dependencies
+        working-directory: ./API-gateway-service
+        run: npm ci
+
+      - name: Run API Gateway tests
+        working-directory: ./API-gateway-service
+        run: npm test
+        env:
+          NODE_ENV: test
+          PORT: 3000
+          JWT_SECRET: test-secret-key
+          RABBITMQ_URL: amqp://localhost:5672
+          RABBITMQ_USERNAME: admin
+          RABBITMQ_PASSWORD: password
+          REDIS_URL: redis://localhost:6379
+          USER_SERVICE_URL: http://localhost:3002
+          TEMPLATE_SERVICE_URL: http://localhost:3001
+
+      - name: Install User Service dependencies
+        working-directory: ./user-service
+        run: npm ci
+
+      - name: Build User Service
+        working-directory: ./user-service
+        run: npm run build
+
+      - name: Install Template Service dependencies
+        working-directory: ./template-service
+        run: npm ci
+
+      - name: Build Template Service
+        working-directory: ./template-service
+        run: npm run build
+
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push API Gateway
+        uses: docker/build-push-action@v4
+        with:
+          context: ./API-gateway-service
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/api-gateway:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/api-gateway:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/api-gateway:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/api-gateway:buildcache,mode=max
+
+      - name: Build and push User Service
+        uses: docker/build-push-action@v4
+        with:
+          context: ./user-service
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/user-service:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/user-service:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/user-service:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/user-service:buildcache,mode=max
+
+      - name: Build and push Template Service
+        uses: docker/build-push-action@v4
+        with:
+          context: ./template-service
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/template-service:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/template-service:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/template-service:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/template-service:buildcache,mode=max
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/hng13-backend-stage4
+            git pull origin main
+            docker-compose down
+            docker-compose pull
+            docker-compose up -d --build
+            docker-compose ps
+
+

@@ -7,7 +7,7 @@ services:
       - "3002:3002"                # Map port 3002 to your machine
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=postgres://hng_user:hng_pass@postgres_db:5432/hng_db?sslmode=disable
+      - DATABASE_URL=postgres://hng_user:hng_pass@postgres_db:5432/user_db?sslmode=disable
       - REDIS_URL=redis://redis_cache:6379
       - PORT=3002
     depends_on:
@@ -25,10 +25,41 @@ services:
       - "3001:3001"                # Map port 3001 to your machine
     environment:
       - NODE_ENV=development
-      - DATABASE_URL=postgres://hng_user:hng_pass@postgres_db:5432/hng_db
+      - DATABASE_URL=postgres://hng_user:hng_pass@postgres_db:5432/template_db?sslmode=disable
       - PORT=3001
     depends_on:
-      - postgres_db
+      postgres_db:
+        condition: service_healthy
+    networks:
+      - hng_network
+
+  api-gateway:
+    build: ./API-gateway-service
+    container_name: api_gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - HOST=0.0.0.0
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_USERNAME=admin
+      - RABBITMQ_PASSWORD=password
+      - REDIS_URL=redis://redis_cache:6379
+      - USER_SERVICE_URL=http://user-service:3002
+      - TEMPLATE_SERVICE_URL=http://template-service:3001
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX_REQUESTS=100
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis_cache:
+        condition: service_started
+      user-service:
+        condition: service_started
+      template-service:
+        condition: service_started
     networks:
       - hng_network
 
@@ -39,15 +70,16 @@ services:
     environment:
       - POSTGRES_USER=hng_user
       - POSTGRES_PASSWORD=hng_pass
-      - POSTGRES_DB=hng_db
+      - POSTGRES_DB=user_db
     ports:
       - "5433:5432"                # Map Postgres port for easy external debugging
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persist database data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     networks:
       - hng_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hng_user -d hng_db"]
+      test: ["CMD-SHELL", "pg_isready -U hng_user -d user_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -61,6 +93,11 @@ services:
       - redis_data:/data           # Persist cache data
     networks:
       - hng_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
   
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -68,8 +105,16 @@ services:
     ports:
       - "5672:5672"                # AMQP port
       - "15672:15672"              # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=password
     networks:
       - hng_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 # --- Shared Volumes & Networks ---
 volumes:

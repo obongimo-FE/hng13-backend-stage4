@@ -37,7 +37,7 @@ export const rateLimitMiddleware = async (request, reply) => {
 
       return reply.code(429).send(
         formatErrorResponse(
-          { code: 'rate_limit_exceeded' },
+          'rate_limit_exceeded',
           'Too many requests. Please try again later.'
         )
       );

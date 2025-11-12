@@ -9,7 +9,7 @@ export class NotificationController {
     if (!user_id || !template_name || !variables) {
       return reply.code(400).send(
         formatErrorResponse(
-          { code: 'validation_error' },
+          'validation_error',
           'user_id, template_name, and variables are required'
         )
       );

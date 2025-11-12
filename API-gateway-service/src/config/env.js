@@ -22,8 +22,8 @@ export const config = {
     url: process.env.REDIS_URL || 'redis://localhost:6379'
   },
   services: {
-    user: process.env.USER_SERVICE_URL || 'http://user-service:3001',
-    template: process.env.TEMPLATE_SERVICE_URL || 'http://template-service:3002'
+    user: process.env.USER_SERVICE_URL || 'http://user-service:3002',
+    template: process.env.TEMPLATE_SERVICE_URL || 'http://template-service:3001'
   },
   rate_limiting: {
     window_ms: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,

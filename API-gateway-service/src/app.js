@@ -7,6 +7,7 @@ import { connectRabbitMQ, closeRabbitMQ } from './utils/rabbitmq-client.js';
 import { connectRedis, closeRedis } from './utils/redis-client.js';
 import { rateLimitMiddleware } from './middleware/rate-limit-middleware.js';
 import { swaggerOptions, swaggerUiOptions } from './config/swagger.js';
+import { formatErrorResponse } from './utils/response-formatter.js';
 
 // Create Fastify instance
 const fastify = Fastify({
@@ -17,6 +18,32 @@ const fastify = Fastify({
       options: { colorize: true }
     } : undefined
   }
+});
+
+// Custom error handler to format errors according to our response format
+fastify.setErrorHandler((error, request, reply) => {
+  // Handle validation errors
+  if (error.validation) {
+    const validationErrors = error.validation.map(err => 
+      `${err.instancePath || 'body'} ${err.message}`
+    ).join(', ');
+    
+    return reply.code(400).send(
+      formatErrorResponse(
+        'validation_error',
+        `Validation failed: ${validationErrors}`
+      )
+    );
+  }
+
+  // Handle other errors
+  const statusCode = error.statusCode || 500;
+  const errorCode = error.code || 'internal_error';
+  const message = error.message || 'An error occurred';
+
+  return reply.code(statusCode).send(
+    formatErrorResponse(errorCode, message)
+  );
 });
 
 // Setup Swagger for Fastify v5

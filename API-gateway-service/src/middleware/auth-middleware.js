@@ -14,7 +14,7 @@ export const authenticate = async (request, reply) => {
     if (!authHeader) {
       return reply.code(401).send(
         formatErrorResponse(
-          { code: 'missing_authorization_header' },
+          'missing_authorization_header',
           'Authorization header is required'
         )
       );
@@ -25,7 +25,7 @@ export const authenticate = async (request, reply) => {
     if (bearer !== 'Bearer' || !token) {
       return reply.code(401).send(
         formatErrorResponse(
-          { code: 'invalid_authorization_format' },
+          'invalid_authorization_format',
           'Authorization header must be: Bearer <token>'
         )
       );
@@ -39,7 +39,7 @@ export const authenticate = async (request, reply) => {
     console.error('JWT Verification Error:', error.message);
     return reply.code(401).send(
       formatErrorResponse(
-        { code: 'invalid_token' },
+        'invalid_token',
         'Authentication token is invalid or expired'
       )
     );

@@ -37,3 +37,7 @@
     "prettier": "^3.0.3"
   }
 }
+
+node_modules/
+.env
+dist/

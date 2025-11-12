@@ -6,26 +6,38 @@ let connection = null;
 let channel = null;
 
 export const connectRabbitMQ = async () => {
-  try {
-    console.log('Connecting to RabbitMQ...');
-    
-    connection = await amqp.connect(config.rabbitmq.url, {
-      credentials: amqp.credentials.plain(
-        config.rabbitmq.username,
-        config.rabbitmq.password
-      )
-    });
+  const maxRetries = 10;
+  const retryDelay = 3000; // 3 seconds
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Connecting to RabbitMQ... (attempt ${attempt}/${maxRetries})`);
+      
+      connection = await amqp.connect(config.rabbitmq.url, {
+        credentials: amqp.credentials.plain(
+          config.rabbitmq.username,
+          config.rabbitmq.password
+        )
+      });
 
-    channel = await connection.createChannel();
+      channel = await connection.createChannel();
 
-    // Set up exchange and queues
-    await setupRabbitMQTopology();
+      // Set up exchange and queues
+      await setupRabbitMQTopology();
 
-    console.log('RabbitMQ connected successfully');
-    
-  } catch (error) {
-    console.error('Failed to connect to RabbitMQ:', error.message);
-    throw error;
+      console.log('RabbitMQ connected successfully');
+      return;
+      
+    } catch (error) {
+      console.error(`Failed to connect to RabbitMQ (attempt ${attempt}/${maxRetries}):`, error.message);
+      
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      console.log(`Retrying in ${retryDelay / 1000} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
   }
 };
 
@@ -35,17 +47,71 @@ const setupRabbitMQTopology = async () => {
     durable: true
   });
 
-  // Create queues
-  await channel.assertQueue(constants.queues.email, { durable: true });
-  await channel.assertQueue(constants.queues.push, { durable: true });
-  await channel.assertQueue(constants.queues.failed, { durable: true });
+  // Create retry and failed queues for email
+  const emailRetryQueue = `${constants.queues.email}.retry`;
+  const emailFailedQueue = `${constants.queues.email}.failed`;
+  
+  // Create retry and failed queues for push
+  const pushRetryQueue = `${constants.queues.push}.retry`;
+  const pushFailedQueue = `${constants.queues.push}.failed`;
 
-  // Bind queues to exchange
+  // Main queues with dead letter exchange
+  await channel.assertQueue(constants.queues.email, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': constants.exchange.name,
+      'x-dead-letter-routing-key': emailRetryQueue,
+      'x-message-ttl': 60000 // 1 minute TTL for retries
+    }
+  });
+
+  await channel.assertQueue(constants.queues.push, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': constants.exchange.name,
+      'x-dead-letter-routing-key': pushRetryQueue,
+      'x-message-ttl': 60000 // 1 minute TTL for retries
+    }
+  });
+
+  // Retry queues with exponential backoff
+  await channel.assertQueue(emailRetryQueue, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': constants.exchange.name,
+      'x-dead-letter-routing-key': constants.queues.email,
+      'x-message-ttl': 120000 // 2 minutes for first retry
+    }
+  });
+
+  await channel.assertQueue(pushRetryQueue, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': constants.exchange.name,
+      'x-dead-letter-routing-key': constants.queues.push,
+      'x-message-ttl': 120000 // 2 minutes for first retry
+    }
+  });
+
+  // Failed queues (dead letter queues)
+  await channel.assertQueue(constants.queues.failed, { durable: true });
+  await channel.assertQueue(emailFailedQueue, { durable: true });
+  await channel.assertQueue(pushFailedQueue, { durable: true });
+
+  // Bind main queues to exchange
   await channel.bindQueue(constants.queues.email, constants.exchange.name, constants.queues.email);
   await channel.bindQueue(constants.queues.push, constants.exchange.name, constants.queues.push);
+  
+  // Bind retry queues
+  await channel.bindQueue(emailRetryQueue, constants.exchange.name, emailRetryQueue);
+  await channel.bindQueue(pushRetryQueue, constants.exchange.name, pushRetryQueue);
+  
+  // Bind failed queues
   await channel.bindQueue(constants.queues.failed, constants.exchange.name, constants.queues.failed);
+  await channel.bindQueue(emailFailedQueue, constants.exchange.name, emailFailedQueue);
+  await channel.bindQueue(pushFailedQueue, constants.exchange.name, pushFailedQueue);
 
-  console.log('RabbitMQ topology setup completed');
+  console.log('RabbitMQ topology setup completed with retry and DLQ support');
 };
 
 export const getChannel = () => {

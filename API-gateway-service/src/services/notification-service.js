@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { QueueService } from './queue-service.js';
-import { userServiceBreaker, templateServiceBreaker } from '../utils/circuit-breaker.js';
-import { config } from '../config/env.js';
+import { fetchUser, fetchTemplate } from '../utils/service-client.js';
 
 export const processNotificationRequest = async (requestData) => {
   const { user_id, template_name, variables } = requestData;
@@ -10,44 +9,79 @@ export const processNotificationRequest = async (requestData) => {
   console.log(`[${correlationId}] 📨 Processing notification for user ${user_id} with template ${template_name}`);
 
   try {
-    // Since external services aren't running, simulate the data
-    console.log(`[${correlationId}] ⚡ Simulating external service calls (circuit breaker OPEN)`);
+    // Fetch user data from User Service
+    console.log(`[${correlationId}] 🔍 Fetching user data from User Service...`);
+    const user = await fetchUser(user_id);
     
-    // Simulate user data (since user service circuit breaker is OPEN)
-    const user = {
-      id: user_id,
-      email: 'test@example.com',
-      notification_preference: {
-        email_enabled: true,
-        push_enabled: true
-      },
-      push_tokens: []
-    };
+    if (!user) {
+      throw new Error(`User ${user_id} not found`);
+    }
 
-    // Simulate template data
-    const template = {
-      id: template_name,
-      type: 'EMAIL', // Default to email for testing
-      subject: 'Test Notification',
-      body: 'Hello {{user_name}}! This is a test notification.'
-    };
+    // Check user preferences
+    const preferences = user.preferences || { email: true, push: true };
+    const emailEnabled = preferences.email !== false;
+    const pushEnabled = preferences.push !== false;
 
-    console.log(`[${correlationId}] ✅ Using simulated data for testing`);
+    if (!emailEnabled && !pushEnabled) {
+      throw new Error(`User ${user_id} has disabled all notification preferences`);
+    }
 
-    // Determine notification type and route accordingly
-    const notificationType = 'email'; // Default to email for testing
+    // Fetch template from Template Service
+    console.log(`[${correlationId}] 🔍 Fetching template from Template Service...`);
+    const template = await fetchTemplate(template_name);
     
+    if (!template) {
+      throw new Error(`Template ${template_name} not found`);
+    }
+
+    console.log(`[${correlationId}] ✅ Retrieved user and template data`);
+
+    // Determine notification type based on template content or default to email
+    // For now, we'll check if template has a type field, otherwise default to email
+    // The email/push services will handle the actual routing
+    let notificationType = 'email'; // Default
+    
+    // If template has a type field, use it
+    if (template.type) {
+      notificationType = template.type.toLowerCase();
+    } else if (template.content && template.content.includes('{{push_token}}')) {
+      notificationType = 'push';
+    }
+
+    // If user has disabled the notification type, skip it
+    if (notificationType === 'email' && !emailEnabled) {
+      if (pushEnabled) {
+        notificationType = 'push';
+      } else {
+        throw new Error('User has disabled both email and push notifications');
+      }
+    } else if (notificationType === 'push' && !pushEnabled) {
+      if (emailEnabled) {
+        notificationType = 'email';
+      } else {
+        throw new Error('User has disabled both email and push notifications');
+      }
+    }
+    
+    // Prepare notification data with user and template info
     const notificationData = {
       type: notificationType,
-      user_id,
-      template_id: template_name,
-      variables,
+      user_id: user.user_id || user_id,
+      user_email: user.email,
+      push_token: user.push_token,
+      template_id: template.template_id || template_name,
+      template_content: template.content,
+      variables: {
+        ...variables,
+        user_name: user.name || variables.user_name,
+        user_email: user.email || variables.user_email
+      },
       correlation_id: correlationId
     };
 
     console.log(`[${correlationId}] 📤 Publishing to ${notificationType} queue...`);
 
-    // 4. Publish to appropriate queue
+    // Publish to appropriate queue
     const result = await QueueService.publishNotification(notificationData);
     
     console.log(`[${correlationId}] ✅ Notification queued successfully: ${result.routing_key}`);
