@@ -6,8 +6,7 @@ import routes from './routes/index.js';
 import { connectRabbitMQ, closeRabbitMQ } from './utils/rabbitmq-client.js';
 import { connectRedis, closeRedis } from './utils/redis-client.js';
 import { rateLimitMiddleware } from './middleware/rate-limit-middleware.js';
-import { swaggerSpec } from './config/swagger.js';
-
+import { swaggerOptions, swaggerUiOptions } from './config/swagger.js';
 
 // Create Fastify instance
 const fastify = Fastify({
@@ -20,27 +19,14 @@ const fastify = Fastify({
   }
 });
 
-// Register Swagger
+// Setup Swagger for Fastify v5
 const setupSwagger = async () => {
-  await fastify.register(fastifySwagger, {
-    mode: 'static',
-    specification: {
-      document: swaggerSpec
-    }
-  });
+  // Register Swagger
+  await fastify.register(fastifySwagger, swaggerOptions);
 
-  await fastify.register(fastifySwaggerUi, {
-    routePrefix: '/docs',
-    uiConfig: {
-      docExpansion: 'full',
-      deepLinking: false
-    },
-    theme: {
-      title: 'Notification System API Gateway'
-    }
-  });
+  // Register Swagger UI
+  await fastify.register(fastifySwaggerUi, swaggerUiOptions);
 };
-
 
 // Global rate limiting
 fastify.addHook('onRequest', rateLimitMiddleware);
@@ -52,12 +38,11 @@ async function setupServer() {
     await connectRabbitMQ();
     await connectRedis();
     
-    fastify.log.info('✅ External services connected successfully');
+    fastify.log.info('External services connected successfully');
 
-     // Setup Swagger documentation
+    // Setup Swagger documentation
     await setupSwagger();
-    fastify.log.info('✅ Swagger documentation setup complete');
-
+    fastify.log.info('Swagger documentation setup complete');
 
     // Register all routes
     await fastify.register(routes);
@@ -84,6 +69,7 @@ const start = async () => {
 
     server.log.info(`API Gateway Service running on ${config.server.host}:${config.server.port}`);
     server.log.info(`Health check: http://${config.server.host}:${config.server.port}/health`);
+    server.log.info(`Documentation: http://${config.server.host}:${config.server.port}/docs`);
     server.log.info(`Environment: ${config.server.env}`);
 
   } catch (err) {
