@@ -2,6 +2,8 @@ import Fastify from 'fastify';
 import type { FastifyInstance } from 'fastify';
 import dotenv from 'dotenv';
 import { Client } from 'pg';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUI from '@fastify/swagger-ui';
 
 
 dotenv.config();
@@ -48,7 +50,40 @@ const createTable = async () => {
 
 async function templateRoutes(server: FastifyInstance) {
 
-  server.post<CreateTemplateRequest>('/templates', async (request, reply) => {
+  server.post<CreateTemplateRequest>('/templates', {
+    // --- ADDING SCHEMA ---
+    schema: {
+      summary: 'Create a new template',
+      tags: ['Templates'],
+      body: {
+        type: 'object',
+        required: ['name', 'content'],
+        properties: {
+          name: { type: 'string' },
+          content: { type: 'string' }
+        }
+      },
+      response: {
+        201: {
+          description: 'Template created successfully',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            data: { $ref: 'Template' } // Use our shared schema
+          }
+        },
+        409: {
+          description: 'Template name already exists',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
     const { name, content } = request.body;
 
     try {
@@ -73,7 +108,38 @@ async function templateRoutes(server: FastifyInstance) {
     }
   });
 
-  server.get<GetTemplateParams>('/templates/:name', async (request, reply) => {
+  server.get<GetTemplateParams>('/templates/:name', {
+    // --- ADDING SCHEMA ---
+    schema: {
+      summary: 'Get a template by its name',
+      tags: ['Templates'],
+      params: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          description: 'Successful response',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: { $ref: 'Template' } // Use our shared schema
+          }
+        },
+        404: {
+          description: 'Template not found',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
     const { name } = request.params;
 
     try {
@@ -104,6 +170,45 @@ const start = async () => {
     server.log.info('Connected to Database!');
     await createTable();
 
+    // Register the main Swagger plugin
+    await server.register(fastifySwagger, { 
+      openapi: {
+        info: {
+          title: 'HNG Template Service',
+          description: 'API documentation for the Template services',
+          version: '1.0.0'
+        },
+        servers: [
+          { url: 'http://localhost:3001', description: 'Development server' }
+        ],
+      },
+    });
+    
+    // Register the Swagger UI (the webpage)
+    await server.register(fastifySwaggerUI, { 
+      routePrefix: '/docs', // This creates the http://localhost:3001/docs page
+      uiConfig: {
+        docExpansion: 'full', // 'list' or 'full'
+        deepLinking: false
+      },
+      staticCSP: true, // Content Security Policy
+      transformStaticCSP: (header) => header,
+    });
+    
+    // Define User schema for Swagger
+    const templateSchema = {
+      $id: 'Template',
+      type: 'object',
+      properties: {
+        template_id: { type: 'number' },
+        name: { type: 'string' },
+        content: { type: 'string' },
+        created_at: { type: 'string', format: 'date-time' },
+      }
+    };
+
+    server.addSchema(templateSchema);
+
     // Register all your routes with the prefix
     server.register(templateRoutes, { prefix: '/api/v1' });
 
@@ -112,7 +217,7 @@ const start = async () => {
     });
 
     await server.listen({ host: '0.0.0.0', port: Number(process.env.PORT) || 3001 });
-    console.log(`User Service running on port ${Number(process.env.PORT) || 3001}`);
+    console.log(`Template Service running on port ${Number(process.env.PORT) || 3001}`);
 
   } catch (err) {
     server.log.error(err);
