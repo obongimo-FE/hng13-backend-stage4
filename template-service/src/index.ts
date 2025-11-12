@@ -25,6 +25,18 @@ interface GetTemplateParams {
   };
 }
 
+interface UpdateTemplateParams {
+  Params: {
+    name: string;
+  };
+}
+
+interface UpdateTemplateRequest {
+  Body: {
+    content: string; // Only allowing content updates
+  };
+}
+
 // Create a new database client
 const dbClient = new Client({
   connectionString: process.env.DATABASE_URL,
@@ -156,6 +168,85 @@ async function templateRoutes(server: FastifyInstance) {
         data: result.rows[0]
       };
     } catch (err) {
+      request.log.error(err);
+      reply.code(500);
+      return { success: false, message: 'Internal Server Error' };
+    }
+  });
+
+  server.patch<UpdateTemplateParams & UpdateTemplateRequest>('/templates/:name', {
+    schema: {
+      summary: 'Update a template\'s content',
+      tags: ['Templates'],
+      params: {
+        type: 'object',
+        properties: { name: { type: 'string' } }
+      },
+      body: {
+        type: 'object',
+        required: ['content'],
+        properties: { content: { type: 'string' } }
+      },
+      response: {
+        200: { $ref: 'Template' } // Returns the updated template
+      }
+    }
+  }, async (request, reply) => {
+    const { name } = request.params;
+    const { content } = request.body;
+
+    try {
+      const query = `
+        UPDATE templates
+        SET content = $1
+        WHERE name = $2
+        RETURNING id AS template_id, name, content, created_at;
+      `;
+      const result = await dbClient.query(query, [content, name]);
+
+      if (result.rows.length === 0) {
+        reply.code(404);
+        return { success: false, message: 'Template not found' };
+      }
+
+      return { success: true, data: result.rows[0] };
+    } catch (err: any) {
+      request.log.error(err);
+      reply.code(500);
+      return { success: false, message: 'Internal Server Error' };
+    }
+  });
+
+  server.delete<GetTemplateParams>('/templates/:name', {
+    schema: {
+      summary: 'Delete a template by name',
+      tags: ['Templates'],
+      params: {
+        type: 'object',
+        properties: { name: { type: 'string' } }
+      },
+      response: {
+        204: { // 204 means "No Content" (a successful deletion)
+          type: 'object',
+          properties: {}
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { name } = request.params;
+
+    try {
+      const query = 'DELETE FROM templates WHERE name = $1 RETURNING *;';
+      const result = await dbClient.query(query, [name]);
+
+      if (result.rows.length === 0) {
+        reply.code(404);
+        return { success: false, message: 'Template not found' };
+      }
+
+      reply.code(204); // Send "No Content"
+      return; // Return nothing
+    } catch (err: any) {
       request.log.error(err);
       reply.code(500);
       return { success: false, message: 'Internal Server Error' };

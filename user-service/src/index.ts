@@ -319,6 +319,52 @@ async function userRoutes(server: FastifyInstance) {
       }
     }
   );
+
+  server.delete<GetUserParams>('/users/:id', {
+    schema: {
+      summary: 'Delete a user by ID',
+      tags: ['Users'],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'number' } }
+      },
+      response: {
+        204: {
+          type: 'object',
+          properties: {}
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params;
+    const cacheKey = `user:${id}`;
+
+    if (isNaN(Number(id))) {
+        reply.code(400);
+        return { success: false, message: 'Invalid user ID' };
+    }
+
+    try {
+      const query = 'DELETE FROM users WHERE id = $1 RETURNING *;';
+      const result = await dbClient.query(query, [id]);
+
+      if (result.rows.length === 0) {
+        reply.code(404);
+        return { success: false, message: 'User not found' };
+      }
+
+      // --- CACHE INVALIDATION ---
+      await redisClient.del(cacheKey);
+      request.log.info(`CACHE INVALIDATED (DELETE): ${cacheKey}`);
+
+      reply.code(204);
+      return;
+    } catch (err: any) {
+      request.log.error(err);
+      reply.code(500);
+      return { success: false, message: 'Internal Server Error' };
+    }
+  });
 }
 
 const start = async () => {
