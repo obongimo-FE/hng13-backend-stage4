@@ -1,9 +1,13 @@
 import Fastify from 'fastify';
 import { config } from './config/env.js';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
 import routes from './routes/index.js';
 import { connectRabbitMQ, closeRabbitMQ } from './utils/rabbitmq-client.js';
 import { connectRedis, closeRedis } from './utils/redis-client.js';
 import { rateLimitMiddleware } from './middleware/rate-limit-middleware.js';
+import { swaggerSpec } from './config/swagger.js';
+
 
 // Create Fastify instance
 const fastify = Fastify({
@@ -16,6 +20,28 @@ const fastify = Fastify({
   }
 });
 
+// Register Swagger
+const setupSwagger = async () => {
+  await fastify.register(fastifySwagger, {
+    mode: 'static',
+    specification: {
+      document: swaggerSpec
+    }
+  });
+
+  await fastify.register(fastifySwaggerUi, {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'full',
+      deepLinking: false
+    },
+    theme: {
+      title: 'Notification System API Gateway'
+    }
+  });
+};
+
+
 // Global rate limiting
 fastify.addHook('onRequest', rateLimitMiddleware);
 
@@ -27,6 +53,11 @@ async function setupServer() {
     await connectRedis();
     
     fastify.log.info('✅ External services connected successfully');
+
+     // Setup Swagger documentation
+    await setupSwagger();
+    fastify.log.info('✅ Swagger documentation setup complete');
+
 
     // Register all routes
     await fastify.register(routes);

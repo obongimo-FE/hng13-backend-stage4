@@ -22,6 +22,8 @@
   "author": "Your Team",
   "license": "MIT",
   "dependencies": {
+    "@fastify/swagger": "^9.6.0",
+    "@fastify/swagger-ui": "^5.2.3",
     "amqplib": "^0.10.3",
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
