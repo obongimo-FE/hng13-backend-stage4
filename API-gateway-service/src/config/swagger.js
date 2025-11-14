@@ -80,32 +80,58 @@ All services follow standard response format:
 }
 \`\`\`
 
-## Service Endpoints
+## Complete API Endpoints
 
-### API Gateway (Port 3000)
-- `GET /health` - Health check
-- `POST /api/v1/notify` - Send notification (requires JWT)
-- `GET /api/v1/notifications/:correlation_id/status` - Get notification status
+### API Gateway (Port 3000) - This Service
+
+**Health & Status:**
+- \`GET /health\` - Health check (no auth required)
+
+**Notifications:**
+- \`POST /api/v1/notify\` - Send email/push notification (JWT required)
+- \`GET /api/v1/notifications/:correlation_id/status\` - Get notification status (JWT required)
 
 ### User Service (Port 3002)
-- `GET /health` - Health check
-- `POST /api/v1/users` - Create user
-- `GET /api/v1/users/:id` - Get user by ID
-- `POST /api/v1/login` - User login
-- `PATCH /api/v1/users/:id/preferences` - Update preferences
+
+**Base URL**: http://localhost:3002
+
+**Endpoints:**
+- \`GET /health\` - Health check
+- \`POST /api/v1/users\` - Create new user
+- \`GET /api/v1/users/:id\` - Get user by ID
+- \`POST /api/v1/login\` - User authentication/login
+- \`PATCH /api/v1/users/:id/preferences\` - Update notification preferences
+
+**Note**: All User Service endpoints are documented in Swagger but accessed via port 3002.
 
 ### Template Service (Port 3001)
-- `GET /health` - Health check
-- `POST /api/v1/templates` - Create template
-- `GET /api/v1/templates/:name` - Get template (supports ?version=1&language=en)
+
+**Base URL**: http://localhost:3001
+
+**Endpoints:**
+- \`GET /health\` - Health check
+- \`POST /api/v1/templates\` - Create new template
+- \`GET /api/v1/templates/:name\` - Get template (supports ?version=1&language=en)
+- \`PUT /api/v1/templates/:name\` - Update template (creates new version) - *Documented*
+- \`DELETE /api/v1/templates/:name\` - Delete template - *Not implemented*
+
+**Note**: All Template Service endpoints are documented in Swagger but accessed via port 3001.
 
 ### Email Service (Port 3003)
-- `GET /health` - Health check
-- Consumes from `email.queue` (RabbitMQ)
+
+**Base URL**: http://localhost:3003
+
+**Endpoints:**
+- \`GET /health\` - Health check
+- Consumes from \`email.queue\` (RabbitMQ) - No REST endpoints
 
 ### Push Service (Port 3004)
-- `GET /health` - Health check
-- Consumes from `push.queue` (RabbitMQ)
+
+**Base URL**: http://localhost:3004
+
+**Endpoints:**
+- \`GET /health\` - Health check
+- Consumes from \`push.queue\` (RabbitMQ) - No REST endpoints
 
 ## Quick Links
 
