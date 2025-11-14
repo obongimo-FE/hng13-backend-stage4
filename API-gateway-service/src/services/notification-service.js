@@ -36,41 +36,23 @@ export const processNotificationRequest = async (requestData) => {
 
     console.log(`[${correlationId}] ✅ Retrieved user and template data`);
 
-    // Determine notification type based on template content or default to email
-    // For now, we'll check if template has a type field, otherwise default to email
-    // The email/push services will handle the actual routing
-    let notificationType = 'email'; // Default
-    
-    // If template has a type field, use it
-    if (template.type) {
-      notificationType = template.type.toLowerCase();
-    } else if (template.content && template.content.includes('{{push_token}}')) {
-      notificationType = 'push';
+    // Determine notification types based on template and user preferences
+    const templateType = template.type ? template.type.toLowerCase() : 'email';
+    const shouldSendEmail = emailEnabled && (templateType === 'email' || templateType === 'both');
+    const shouldSendPush = pushEnabled && user.push_token && (templateType === 'push' || templateType === 'both');
+
+    if (!shouldSendEmail && !shouldSendPush) {
+      throw new Error('User has disabled all notification preferences or missing push token');
     }
 
-    // If user has disabled the notification type, skip it
-    if (notificationType === 'email' && !emailEnabled) {
-      if (pushEnabled) {
-        notificationType = 'push';
-      } else {
-        throw new Error('User has disabled both email and push notifications');
-      }
-    } else if (notificationType === 'push' && !pushEnabled) {
-      if (emailEnabled) {
-        notificationType = 'email';
-      } else {
-        throw new Error('User has disabled both email and push notifications');
-      }
-    }
-    
-    // Prepare notification data with user and template info
-    const notificationData = {
-      type: notificationType,
+    // Prepare base notification data
+    const baseNotificationData = {
       user_id: user.user_id || user_id,
       user_email: user.email,
       push_token: user.push_token,
       template_id: template.template_id || template_name,
       template_content: template.content,
+      template_subject: template.subject,
       variables: {
         ...variables,
         user_name: user.name || variables.user_name,
@@ -79,14 +61,38 @@ export const processNotificationRequest = async (requestData) => {
       correlation_id: correlationId
     };
 
-    console.log(`[${correlationId}] 📤 Publishing to ${notificationType} queue...`);
+    const results = [];
 
-    // Publish to appropriate queue
-    const result = await QueueService.publishNotification(notificationData);
+    // Send email if enabled
+    if (shouldSendEmail) {
+      const emailData = {
+        ...baseNotificationData,
+        type: 'email'
+      };
+      
+      console.log(`[${correlationId}] 📤 Publishing to email queue...`);
+      const emailResult = await QueueService.publishNotification(emailData);
+      results.push(emailResult);
+      console.log(`[${correlationId}] ✅ Email notification queued: ${emailResult.routing_key}`);
+    }
+
+    // Send push if enabled
+    if (shouldSendPush) {
+      const pushData = {
+        ...baseNotificationData,
+        type: 'push'
+      };
+      
+      console.log(`[${correlationId}] 📤 Publishing to push queue...`);
+      const pushResult = await QueueService.publishNotification(pushData);
+      results.push(pushResult);
+      console.log(`[${correlationId}] ✅ Push notification queued: ${pushResult.routing_key}`);
+    }
     
-    console.log(`[${correlationId}] ✅ Notification queued successfully: ${result.routing_key}`);
-    
-    return result;
+    return {
+      correlation_id: correlationId,
+      notifications: results
+    };
 
   } catch (error) {
     console.error(`[${correlationId}] ❌ Error processing notification:`, error.message);
