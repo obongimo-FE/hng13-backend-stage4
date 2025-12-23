@@ -123,7 +123,8 @@ cd ..
 ```bash
 curl -X POST http://localhost:3000/api/v1/notify \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidGVzdF91c2VyXzEyMyIsImVtYWlsIjoiZGV2ZWxvcGVyQGV4YW1wbGUuY29tIiwicm9sZSI6ImFkbWluIiwiaWF0Ijo
+xNzYzMTMyMDU3LCJleHAiOjE3NjMxMzU2NTd9.Y4YgN0naBRwDISxS-a9Ia0B87A8CJkrGU_-XKfYIcxk" \
   -H "Idempotency-Key: test-email-$(date +%s)" \
   -d '{
     "user_id": "1",

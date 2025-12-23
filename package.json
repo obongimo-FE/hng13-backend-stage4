@@ -1,0 +1,17 @@
+{
+  "name": "smart-comb-documentation",
+  "version": "1.0.0",
+  "description": "Documentation conversion tools for Smart Comb project",
+  "scripts": {
+    "convert": "md-to-pdf --mermaid *.md",
+    "convert:executive": "md-to-pdf --mermaid EXECUTIVE_SUMMARY.md",
+    "convert:technical": "md-to-pdf --mermaid SMART_COMB_TECHNICAL_DOCUMENTATION.md",
+    "convert:diagrams": "md-to-pdf --mermaid SYSTEM_DIAGRAMS.md",
+    "convert:all": "npm run convert:executive && npm run convert:technical && npm run convert:diagrams"
+  },
+  "devDependencies": {
+    "md-to-pdf": "^5.2.4",
+    "@mermaid-js/mermaid-cli": "^10.6.1"
+  }
+}
+
